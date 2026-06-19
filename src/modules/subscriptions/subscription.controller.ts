@@ -20,4 +20,9 @@ export class SubscriptionController {
   ) {
     return this.subscriptionService.updateAutoRenew( id, dto.autoRenew );
   }
+
+  @Post( ":id/cancel" )
+  cancel( @Param( "id" ) id: string ) {
+    return this.subscriptionService.cancel( id );
+  }
 }

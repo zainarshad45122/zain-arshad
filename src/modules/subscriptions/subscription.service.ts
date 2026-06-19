@@ -56,4 +56,15 @@ export class SubscriptionService {
     subscription.autoRenew = autoRenew;
     return this.subscriptionsRepo.save( subscription );
   }
+
+  async cancel( id: string ) {
+    const subscription = await this.subscriptionsRepo.findOne( { where: { id } } );
+    if( !subscription ) {
+      throw new NotFoundException( "Subscription not found" );
+    }
+
+    subscription.autoRenew = false;
+    subscription.status = SubscriptionStatus.CANCELLED;
+    return this.subscriptionsRepo.save( subscription );
+  }
 }
