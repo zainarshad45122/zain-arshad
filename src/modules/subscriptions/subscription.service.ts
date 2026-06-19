@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
@@ -44,6 +44,16 @@ export class SubscriptionService {
       renewalDate: toDate( end ),
     } );
 
+    return this.subscriptionsRepo.save( subscription );
+  }
+
+  async updateAutoRenew( id: string, autoRenew: boolean ) {
+    const subscription = await this.subscriptionsRepo.findOne( { where: { id } } );
+    if( !subscription ) {
+      throw new NotFoundException( "Subscription not found" );
+    }
+
+    subscription.autoRenew = autoRenew;
     return this.subscriptionsRepo.save( subscription );
   }
 }
