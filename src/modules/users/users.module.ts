@@ -7,6 +7,5 @@ import { UsersSeedService } from "./users.seed.service";
 @Module( {
   imports: [ TypeOrmModule.forFeature( [ UserEntity ] ) ],
   providers: [ UsersSeedService ],
-  exports: [ TypeOrmModule ],
 } )
 export class UsersModule {}
