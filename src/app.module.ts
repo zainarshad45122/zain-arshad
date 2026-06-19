@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
+import { UsersModule } from "./modules/users/users.module";
 
 @Module( {
   imports: [
@@ -14,15 +15,16 @@ import { AppService } from "./app.service";
       inject: [ ConfigService ],
       useFactory: ( config: ConfigService ) => ( {
         type: "postgres" as const,
-        host: config.get<string>( "DB_HOST", "localhost" ),
-        port: config.get<number>( "DB_PORT", 5432 ),
-        username: config.get<string>( "DB_USER", "ai_gateway" ),
-        password: config.get<string>( "DB_PASSWORD", "ai_gateway" ),
-        database: config.get<string>( "DB_NAME", "ai_gateway" ),
+        host: config.getOrThrow<string>( "DB_HOST" ),
+        port: config.getOrThrow<number>( "DB_PORT" ),
+        username: config.getOrThrow<string>( "DB_USER" ),
+        password: config.getOrThrow<string>( "DB_PASSWORD" ),
+        database: config.getOrThrow<string>( "DB_NAME" ),
         autoLoadEntities: true,
         synchronize: true,
       } ),
     } ),
+    UsersModule,
   ],
   controllers: [ AppController ],
   providers: [ AppService ],
