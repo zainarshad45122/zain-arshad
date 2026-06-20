@@ -10,6 +10,7 @@ import {
 import { ChatMessageEntity, ChatSource } from "./entities/chat-message.entity";
 import { MockOpenAiService } from "./mock-openai.service";
 import { QuotaExceededError } from "../../common/errors/quota-exceeded.error";
+import { toDateString } from "../../common/utils";
 
 @Injectable()
 export class ChatService {
@@ -38,7 +39,7 @@ export class ChatService {
   }
 
   async useBundle( userId: string ) {
-    const today = new Date().toISOString().slice( 0, 10 );
+    const today = toDateString( new Date() );
 
     const subscription = await this.subscriptionsRepo
       .createQueryBuilder( "s" )

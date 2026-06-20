@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, LessThan, LessThanOrEqual, Repository } from "typeorm";
 
+import { addBillingPeriod, toDateString } from "../../common/utils";
 import { CreateSubscriptionDto } from "./create-subscription.dto";
 import {
-  BillingCycle,
   SubscriptionEntity,
   SubscriptionStatus,
 } from "./entities/subscription.entity";
@@ -19,16 +20,7 @@ export class SubscriptionService {
 
   async create( dto: CreateSubscriptionDto ) {
     const tier = TIER_CONFIG[ dto.tier ];
-    const start = new Date();
-    const end = new Date( start );
-
-    if( dto.billingCycle === BillingCycle.MONTHLY ) {
-      end.setMonth( end.getMonth() + 1 );
-    } else {
-      end.setFullYear( end.getFullYear() + 1 );
-    }
-
-    const toDate = ( date: Date ) => date.toISOString().slice( 0, 10 );
+    const dates = addBillingPeriod( dto.billingCycle );
 
     const subscription = this.subscriptionsRepo.create( {
       userId: dto.userId,
@@ -39,9 +31,9 @@ export class SubscriptionService {
       maxMessages: tier.maxMessages,
       remainingMessages: tier.maxMessages,
       price: String( tier.price ),
-      startDate: toDate( start ),
-      endDate: toDate( end ),
-      renewalDate: toDate( end ),
+      startDate: dates.startDate,
+      endDate: dates.endDate,
+      renewalDate: dates.endDate,
     } );
 
     return this.subscriptionsRepo.save( subscription );
@@ -66,5 +58,45 @@ export class SubscriptionService {
     subscription.autoRenew = false;
     subscription.status = SubscriptionStatus.CANCELLED;
     return this.subscriptionsRepo.save( subscription );
+  }
+
+  @Cron( CronExpression.EVERY_DAY_AT_MIDNIGHT )
+  async processRenewals() {
+    const today = toDateString( new Date() );
+
+    const due = await this.subscriptionsRepo.find( {
+      where: {
+        autoRenew: true,
+        status: SubscriptionStatus.ACTIVE,
+        renewalDate: LessThanOrEqual( today ),
+      },
+    } );
+
+    for( const sub of due ) {
+      // 20% chance of payment failure - making the subscription inactive
+      if( Math.random() < 0.2 ) {
+        sub.status = SubscriptionStatus.INACTIVE;
+      } else {
+        const dates = addBillingPeriod( sub.billingCycle );
+        sub.startDate = dates.startDate;
+        sub.endDate = dates.endDate;
+        sub.renewalDate = dates.endDate;
+        sub.remainingMessages = sub.maxMessages;
+      }
+
+      await this.subscriptionsRepo.save( sub );
+    }
+
+    const expired = await this.subscriptionsRepo.find( {
+      where: {
+        status: In( [ SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED ] ),
+        endDate: LessThan( today ),
+      },
+    } );
+
+    for( const sub of expired ) {
+      sub.status = SubscriptionStatus.INACTIVE;
+      await this.subscriptionsRepo.save( sub );
+    }
   }
 }
