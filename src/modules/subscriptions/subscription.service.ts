@@ -55,6 +55,7 @@ export class SubscriptionService {
 
   @Cron( CronExpression.EVERY_DAY_AT_MIDNIGHT )
   async processRenewals() {
+    // fine for a test app,at scale this would enqueue renewals and process them in batches
     const today = toDateString( new Date() );
 
     const due = await this.subscriptions.findDueForRenewal( today );
@@ -74,6 +75,7 @@ export class SubscriptionService {
       await this.subscriptions.save( sub );
     }
 
+    //marking expired subscriptions as inactive
     const expired = await this.subscriptions.findExpired( today );
 
     for( const sub of expired ) {

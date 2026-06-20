@@ -5,6 +5,7 @@ import { In, LessThan, LessThanOrEqual, Repository } from "typeorm";
 import {
   SubscriptionEntity,
   SubscriptionStatus,
+  SubscriptionTier,
 } from "./entities/subscription.entity";
 
 @Injectable()
@@ -43,5 +44,22 @@ export class SubscriptionRepository {
         endDate: LessThan( today ),
       },
     } );
+  }
+
+  // newest active/cancelled bundle with quota left (or enterprise), still within the billing period
+  findActiveBundleForUser( userId: string, today: string ) {
+    return this.repo
+      .createQueryBuilder( "s" )
+      .where( "s.user_id = :userId", { userId } )
+      .andWhere( "s.end_date >= :today", { today } )
+      .andWhere( "s.status IN (:...statuses)", {
+        statuses: [ SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED ],
+      } )
+      .andWhere(
+        "(s.remaining_messages > 0 OR s.tier = :enterprise)",
+        { enterprise: SubscriptionTier.ENTERPRISE },
+      )
+      .orderBy( "s.created_at", "DESC" )
+      .getOne();
   }
 }

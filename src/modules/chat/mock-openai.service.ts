@@ -1,18 +1,16 @@
 import { Injectable } from "@nestjs/common";
 
-function sleep( ms: number ) {
-  return new Promise( ( resolve ) => setTimeout( resolve, ms ) );
-}
+import { sleep } from "../../common/utils";
 
 @Injectable()
 export class MockOpenAiService {
   async complete( question: string ) {
-    const delay = 500 + Math.random() * 1000;
-    await sleep( delay );
+    //mocking a delay of 1 second, mimicking the actual OpenAI API delay
+    await sleep( 1000 );
 
     return {
       answer: `Mock response to: ${question}`,
-      tokens: Math.floor( 50 + Math.random() * 200 ),
+      tokens: 100,
     };
   }
 }

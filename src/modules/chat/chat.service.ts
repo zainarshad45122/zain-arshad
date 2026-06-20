@@ -1,13 +1,9 @@
 import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { MoreThanOrEqual, Repository } from "typeorm";
 
-import {
-  SubscriptionEntity,
-  SubscriptionStatus,
-  SubscriptionTier,
-} from "../subscriptions/entities/subscription.entity";
-import { ChatMessageEntity, ChatSource } from "./entities/chat-message.entity";
+import { SubscriptionTier } from "../subscriptions/entities/subscription.entity";
+import { SubscriptionRepository } from "../subscriptions/subscription.repository";
+import { ChatSource } from "./entities/chat-message.entity";
+import { ChatRepository } from "./chat.repository";
 import { MockOpenAiService } from "./mock-openai.service";
 import { QuotaExceededError } from "../../common/errors/quota-exceeded.error";
 import { toDateString } from "../../common/utils";
@@ -15,45 +11,30 @@ import { toDateString } from "../../common/utils";
 @Injectable()
 export class ChatService {
   constructor(
-    @InjectRepository( ChatMessageEntity )
-    private readonly chatRepo: Repository<ChatMessageEntity>,
-    @InjectRepository( SubscriptionEntity )
-    private readonly subscriptionsRepo: Repository<SubscriptionEntity>,
+    private readonly chat: ChatRepository,
+    private readonly subscriptions: SubscriptionRepository,
     private readonly mockOpenAi: MockOpenAiService,
   ) {}
 
+  // true if the user has used fewer than 3 free messages this calendar month
   async hasFreeQuota( userId: string ) {
     const monthStart = new Date();
     monthStart.setDate( 1 );
     monthStart.setHours( 0, 0, 0, 0 );
 
-    const freeCount = await this.chatRepo.count( {
-      where: {
-        userId,
-        source: ChatSource.FREE,
-        createdAt: MoreThanOrEqual( monthStart ),
-      },
-    } );
+    const freeCount = await this.chat.countFreeSince( userId, monthStart );
 
     return freeCount < 3;
   }
 
+  // picks the newest active bundle with quota left and decrements it (enterprise skips decrement)
   async useBundle( userId: string ) {
     const today = toDateString( new Date() );
 
-    const subscription = await this.subscriptionsRepo
-      .createQueryBuilder( "s" )
-      .where( "s.user_id = :userId", { userId } )
-      .andWhere( "s.end_date >= :today", { today } )
-      .andWhere( "s.status IN (:...statuses)", {
-        statuses: [ SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED ],
-      } )
-      .andWhere(
-        "(s.remaining_messages > 0 OR s.tier = :enterprise)",
-        { enterprise: SubscriptionTier.ENTERPRISE },
-      )
-      .orderBy( "s.created_at", "DESC" )
-      .getOne();
+    const subscription = await this.subscriptions.findActiveBundleForUser(
+      userId,
+      today,
+    );
 
     if( !subscription ) {
       return null;
@@ -64,12 +45,13 @@ export class ChatService {
       subscription.remainingMessages !== null
     ) {
       subscription.remainingMessages -= 1;
-      await this.subscriptionsRepo.save( subscription );
+      await this.subscriptions.save( subscription );
     }
 
     return subscription;
   }
 
+  // checks free quota first then uses bundle, calls mock OpenAI and saves the message
   async sendMessage( userId: string, question: string ) {
     let source: ChatSource;
     let subscriptionId: string | null = null;
@@ -87,7 +69,7 @@ export class ChatService {
 
     const { answer, tokens } = await this.mockOpenAi.complete( question );
 
-    const message = this.chatRepo.create( {
+    return this.chat.create( {
       userId,
       question,
       answer,
@@ -95,7 +77,5 @@ export class ChatService {
       source,
       subscriptionId,
     } );
-
-    return this.chatRepo.save( message );
   }
 }
