@@ -1,28 +1,23 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { InjectRepository } from "@nestjs/typeorm";
-import { In, LessThan, LessThanOrEqual, Repository } from "typeorm";
 
 import { addBillingPeriod, toDateString } from "../../common/utils";
 import { CreateSubscriptionDto } from "./create-subscription.dto";
-import {
-  SubscriptionEntity,
-  SubscriptionStatus,
-} from "./entities/subscription.entity";
+import { SubscriptionStatus } from "./entities/subscription.entity";
+import { SubscriptionRepository } from "./subscription.repository";
 import { TIER_CONFIG } from "./tiers";
 
 @Injectable()
 export class SubscriptionService {
   constructor(
-    @InjectRepository( SubscriptionEntity )
-    private readonly subscriptionsRepo: Repository<SubscriptionEntity>,
+    private readonly subscriptions: SubscriptionRepository,
   ) {}
 
   async create( dto: CreateSubscriptionDto ) {
     const tier = TIER_CONFIG[ dto.tier ];
     const dates = addBillingPeriod( dto.billingCycle );
 
-    const subscription = this.subscriptionsRepo.create( {
+    return this.subscriptions.create( {
       userId: dto.userId,
       tier: dto.tier,
       billingCycle: dto.billingCycle,
@@ -35,42 +30,34 @@ export class SubscriptionService {
       endDate: dates.endDate,
       renewalDate: dates.endDate,
     } );
-
-    return this.subscriptionsRepo.save( subscription );
   }
 
   async updateAutoRenew( id: string, autoRenew: boolean ) {
-    const subscription = await this.subscriptionsRepo.findOne( { where: { id } } );
+    const subscription = await this.subscriptions.findById( id );
     if( !subscription ) {
       throw new NotFoundException( "Subscription not found" );
     }
 
     subscription.autoRenew = autoRenew;
-    return this.subscriptionsRepo.save( subscription );
+    return this.subscriptions.save( subscription );
   }
 
   async cancel( id: string ) {
-    const subscription = await this.subscriptionsRepo.findOne( { where: { id } } );
+    const subscription = await this.subscriptions.findById( id );
     if( !subscription ) {
       throw new NotFoundException( "Subscription not found" );
     }
 
     subscription.autoRenew = false;
     subscription.status = SubscriptionStatus.CANCELLED;
-    return this.subscriptionsRepo.save( subscription );
+    return this.subscriptions.save( subscription );
   }
 
   @Cron( CronExpression.EVERY_DAY_AT_MIDNIGHT )
   async processRenewals() {
     const today = toDateString( new Date() );
 
-    const due = await this.subscriptionsRepo.find( {
-      where: {
-        autoRenew: true,
-        status: SubscriptionStatus.ACTIVE,
-        renewalDate: LessThanOrEqual( today ),
-      },
-    } );
+    const due = await this.subscriptions.findDueForRenewal( today );
 
     for( const sub of due ) {
       // 20% chance of payment failure - making the subscription inactive
@@ -84,19 +71,14 @@ export class SubscriptionService {
         sub.remainingMessages = sub.maxMessages;
       }
 
-      await this.subscriptionsRepo.save( sub );
+      await this.subscriptions.save( sub );
     }
 
-    const expired = await this.subscriptionsRepo.find( {
-      where: {
-        status: In( [ SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELLED ] ),
-        endDate: LessThan( today ),
-      },
-    } );
+    const expired = await this.subscriptions.findExpired( today );
 
     for( const sub of expired ) {
       sub.status = SubscriptionStatus.INACTIVE;
-      await this.subscriptionsRepo.save( sub );
+      await this.subscriptions.save( sub );
     }
   }
 }
